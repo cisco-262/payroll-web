@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://opshome-payroll.superstat2011.chatgpt.site/sitemap.xml
