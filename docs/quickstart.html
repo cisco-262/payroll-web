@@ -1,0 +1,27 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>部署指南 · OpsHome Payslip</title><meta name="robots" content="noindex"><link rel="icon" href="assets/favicon.png"><link rel="stylesheet" href="assets/site.css?v=20261031"></head><body><main class="docs-body"><a href="index.html">← OpsHome Payslip</a><p class="eyebrow">SELF-HOSTED / QUICK START</p><h1>部署指南 / Installation guide</h1><p>本指南用于首次部署官方镜像。镜像版本示例为 0.4.8，请先确认 Docker Hub 已发布该标签。已有企业升级时，复用原数据目录、密钥和配置，不要重新初始化企业。</p><p>This guide covers a new installation. Confirm the pinned tag is published. Existing deployments must retain their data directory, identity keys and configuration; do not initialize another company.</p><div class="notice">正式 iOS 配对需要企业公网域名和可信 HTTPS 证书。内网自签名管理证书不能替代员工端的可信 HTTPS。示例假设反向代理运行在 Docker 宿主机上；其他网络拓扑需填写容器实际看到的反代来源地址。<br>Production iOS pairing requires a public domain with trusted HTTPS. This example assumes a reverse proxy on the Docker host.</div><h2>1. 拉取与初始化 / Pull and initialize</h2><p>仅首次新部署执行。请把公司名及地区 CN / HK 替换为实际配置。创建管理员时按终端提示输入密码并保存 TOTP 信息。</p><pre><code>docker pull opshomenoc/payroll-server:0.4.8
+
+docker run --rm -v /opt/payroll/data:/data \
+  opshomenoc/payroll-server:0.4.8 db-upgrade
+
+docker run --rm -v /opt/payroll/data:/data \
+  opshomenoc/payroll-server:0.4.8 init-company \
+  --name &#x27;Your Company&#x27; --region CN
+
+docker run -it --rm -v /opt/payroll/data:/data \
+  opshomenoc/payroll-server:0.4.8 create-admin --username admin</code></pre><h2>2. 配置域名并启动 / Configure and start</h2><p>将 payroll.example.com 改为企业真实域名。仅监听宿主机回环地址 8080，由反向代理提供对外 HTTPS；容器内部端口为 8000，持久数据目录为 /data。官方身份密钥随持久数据保留，请勿删除该目录。</p><pre><code>docker run -d --name opshome-payroll \
+  --restart unless-stopped \
+  -p 127.0.0.1:8080:8000 \
+  -v /opt/payroll/data:/data \
+  -e PAYROLL_PUBLIC_URL=https://payroll.example.com \
+  -e PAYROLL_TRUSTED_HOSTS=payroll.example.com \
+  -e PAYROLL_PROXY_HOPS=1 \
+  -e PAYROLL_TRUSTED_PROXY_CIDRS=&quot;$(docker network inspect bridge --format &#x27;{{(index .IPAM.Config 0).Gateway}}&#x27;)/32&quot; \
+  opshomenoc/payroll-server:0.4.8</code></pre><h2>3. 接入可信 HTTPS / Reverse proxy</h2><p>DNS 指向企业服务器，在反代配置可信证书。下面仅是已有 TLS server 块内的 location 示例，并非完整 TLS 配置。反代覆盖转发头，后端只信任实际反代来源；不要开放为信任全部来源。</p><pre><code>location / {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    client_max_body_size 258m;
+}</code></pre><p>如果反代位于其他容器、另一台主机或自定义网络，请按实际来源配置 PAYROLL_TRUSTED_PROXY_CIDRS，并按网络拓扑调整端口绑定。完整恢复上传还受服务端资源保护限制。请不要为员工 API 或官方授权事件接口添加交互式浏览器质询。</p><h2>4. 验证与开始使用 / Verify</h2><pre><code>docker logs --tail=100 opshome-payroll
+docker exec opshome-payroll payroll-server healthcheck</code></pre><p>通过企业 HTTPS 域名登录后台，按职责授予管理员业务角色。导入 Excel 时人工确认工号、姓名和实发工资三列；先审批，再由授权角色发布。员工在官方 iOS App 输入或扫描企业地址，HR 核对配对码并批准激活。首次绑定成功起算两个月试用。</p><h2>5. 升级与备份 / Upgrade and backup</h2><p>升级前备份，确认新标签已构建。停止原服务后，用同一数据目录与相同配置执行新镜像的 db-upgrade，再重建原容器。保留原密钥、域名和授权策略。不要删除数据卷，不要重新 init-company。</p><p>系统管理员可在后台创建口令加密的 .enc 快照。异机恢复应保持原 HTTPS 地址与信任配置；快照必须包含目标设备的绑定，快照之后的新增或撤销变化需要单独考虑。口令丢失无法找回。</p><p><a href="https://hub.docker.com/r/opshomenoc/payroll-server" target="_blank" rel="noopener noreferrer">Docker Hub →</a> · <a href="https://apps.apple.com/app/id6827447163" target="_blank" rel="noopener noreferrer">App Store →</a></p></main></body></html>
